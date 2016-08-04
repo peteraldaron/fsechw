@@ -4,15 +4,12 @@
 %\documentclass[UTF8,nofonts]{ctexart}
 \usepackage[english]{babel}
 %\usepackage[utf8x]{inputenc}
-\usepackage{xeCJK}
-\usepackage{CJKutf8}
 \usepackage{graphicx}
 \usepackage{parskip}
 \usepackage{makeidx}
 \usepackage{float}
 \usepackage[shortlabels]{enumitem}
 \usepackage{fullpage}
-\usepackage[acronym,shortcuts]{glossaries}
 %\usepackage[margin=0.3in]{geometry}
 \usepackage{amsmath}
 \usepackage{multicol}
@@ -30,7 +27,6 @@
 \newcommand{\ra} {\rightarrow}
 \newcommand{\Ra} {\Rightarrow}
 \newcommand{\la} {\leftarrow}
-\input{acronyms}
 
 \begin{document}
   \title{F-Secure Homework Writeup}
@@ -39,16 +35,105 @@
   \section{Introduction}
   The assignment is to write a ``stream processor'' that analyses a stream of
   events from an application. I implemented the required features using
-  Javascript on Node.js. The following third-party Node.js packages are used:
+  Javascript on Node.js to answer the questions listed in the instructions. The
+  following third-party Node.js packages are used:
   \be
-  \item \texttt{bluebird}
-  \item \texttt{lodash}
-  \item \texttt{line-reader}
-  \be
+  \item \texttt{bluebird} for promises.
+  \item \texttt{lodash} for clean functional programming primitives.
+  \item \texttt{line-reader} for reading the data file.
+  \ee
   To install these dependencies, run:
   \begin{center}
       \texttt{
-      npm line-reader bluebird lodash
+      npm install line-reader bluebird lodash
         }
   \end{center}
+
+  All the code can be found in the \texttt{analysis.js} file in the repository:
+  \begin{center}
+  \texttt{https://github.com/peteraldaron/fsechw}.
+  \end{center}
+
+  \section{Structure}
+  I adapted a pipeline-like design to for data processing, whose procedure is
+  listed below:
+  \be
+  \item The program reads in the file line-by-line using line-reader.
+  \item Using the built-in \texttt{JSON.parse} function, the JSON line is
+      converted into a JS object.
+  \item The source of the event, or the ``product name'', is identified. The
+      program now stores data in product-specific fields.
+  \item Using the ``\texttt{event\_id}'' field, duplicate events are identified,
+      since every event can only have one unique event ID. This is implemented
+      using a map (JS object).
+  \item Afterwards, the types of events are being counted for the specific
+      product.
+  \item Then, the program accounts for the devices seen, as well as the first
+      launch count from unique devices for the specific product. This stage also
+      records the first and last seen time of the device for longest session
+      computation.
+  \item The program then moves onto counting the types of OS of client, as well
+      as their geographical origins, which can be interesting for market
+      penetration analysis.
+  \ee
+
+  Given the size of the data, it may be difficult to store the entirety of the
+  raw data in memory. Therefore, I am only storing those data that are relevant
+  to answering the questions posed, as well as other data of interest.
+
+  \section{Findings}
+  \subsection{Answer to Questions}
+  \subsubsection{How many times has a particular product has been launched during this time
+  period? How many first-time launches can you detect for this product?}
+  \begin{tabular}{c| c c}
+      Product & Launches & first-time launches by unique device\\
+      \hline
+      product-a & 11772 & 1118 \\
+      product-b & 168360 & 35085 \\
+      product-c & 16431 & 296 \\
+      product-d & 223 & 38\\
+  \end{tabular}
+  \subsubsection{Can you detect duplicate events? How?}
+  Yes. Through the event's event\_id field, which is unique for an individual
+  event. The appearance of events are stored in a map (JS object) and any event
+  that appears more than once is a duplicate.
+  \subsubsection{Do you observe anything weird in timestamps?}
+  A couple of things. Sometimes the event timestamp is smaller than
+  event.time.(send or create)\_timestamp. This is likely due to the possibility
+  that the client's time is not synchronized with the network. Another
+  abnormality is that some events do not have the timestamp field. In this case,
+  I use the event.time.send\_timestamp for time accouting instead.
+  \subsubsection{Which device has longest `activity time' max(`first event –
+  latest event')}
+  Product-a's device with the longest activity time is e99b76bc26efd88aa31ab573ff3d8e72e3ee4b91, and the
+  time between the first event and the last event is 25643690662 milliseconds,
+  or 296.8 days.
+
+  Product-b's device with the longest activity time is b3ebdd401e9aebc9c11475a010d864669cd63fc8, and the
+  time between the first event and the last event is 24875526250 milliseconds,
+  or 287.9 days.
+
+  Product-c's device with the longest activity time is
+  606df2e3df770fb16f1b10a2c23e88c2d75bd3e0, and the
+  time between the first event and the last event is 25553708036 milliseconds,
+  or 295.7 days.
+
+  Product-d's device with the longest activity time is
+  2eb0d958910d6351c403875022ab679c8feb6421, and the
+  time between the first event and the last event is 7519999165 milliseconds,
+  or 87.0 days.
+
+  \subsubsection{How would you store the data so that further processing and/or
+  analysis would be easy?}
+  Since the data is already in JSON format, the easiest way to store the data is
+  puting it into MongoDB, which stores the data in JSON format and also supports
+  advanced querying, which supports couting out-of-the-box.
+
+  \subsubsection{If you should prepare a maintenance time for the processor,
+  when would you do it in order to cause minimal impact to products?}
+
+  \subsection{Other Findings}
+
+  \section{Future Work}
+
 \end{document}

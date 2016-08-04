@@ -50,7 +50,7 @@ function dio(obj, indent)
 //end tmp
 
 
-var analysis = {
+var dataContainerPrototype = {
     observed : {}, //observed event ids, rhs=count
     observedDevices : {}, //obs dev ids-> rhs=timestamp of first visit
     lastSeenDevices : {}, //obs dev ids-> rhs=timestamp of last visit
@@ -81,6 +81,9 @@ var analysis = {
     } //visitor origin (country-city)
 };
 
+//analysis for different products:
+var pros = {};
+
 /**
  * get users with overall longest time of usage
  * as defined:
@@ -91,6 +94,10 @@ function longestNActivityTimeDevices(statObj, N) {
         .chain(statObj.observedDevices)
         .keys()
         .map(function(devid) {
+            //debug:
+            if(isNaN(statObj.lastSeenDevices[devid]) || isNaN(statObj.observedDevices[devid])){
+                throw new Error("NAN at "+devid);
+            }
             return [devid, statObj.lastSeenDevices[devid] - statObj.observedDevices[devid]];
         })
         .sortBy(function(item) {
@@ -150,8 +157,22 @@ var eachLine = Promise.promisify(lineReader.eachLine);
 
 eachLine('obfuscated_data', function (json) {
     //parse json
+    var analysis = null;
     Promise.resolve(JSON.parse(json))
     .then(function (parsedObject) {
+        //pre processing: product switching
+        if (parsedObject.source) {
+            if (!_.has(pros, parsedObject.source)){
+                pros[parsedObject.source] = _.cloneDeep(dataContainerPrototype);
+            }
+            analysis = pros[parsedObject.source];
+            return parsedObject;
+
+        } else {
+            throw new Error("error: product name not found");
+            return null;
+        }
+    }).then(function (parsedObject) {
         //event duplication count
         if (parsedObject.event_id) {
             if(analysis.observed[parsedObject.event_id]) {
@@ -161,7 +182,7 @@ eachLine('obfuscated_data', function (json) {
             } else {
                 analysis.observed[parsedObject.event_id] = 1;
                 //add timestamp to list:
-                analysis.timestamps.push(parsedObject.timestamp);
+                analysis.timestamps.push(parsedObject.timestamp || parsedObject.time.send_timestamp);
             }
         }
         return parsedObject;
@@ -181,7 +202,7 @@ eachLine('obfuscated_data', function (json) {
                 && parsedObject.time){
             //first seen:
             analysis.observedDevices[parsedObject.device.device_id] =
-                parsedObject.timestamp;
+                parsedObject.timestamp || parsedObject.time.send_timestamp;
         }
         //log event if event is launch:
         if(!analysis.launchedDevices[parsedObject.device.device_id]
@@ -190,9 +211,9 @@ eachLine('obfuscated_data', function (json) {
         }
         //update last seen timestamp:
         analysis.lastSeenDevices[parsedObject.device.device_id] =
-                parsedObject.timestamp;
+                parsedObject.timestamp || parsedObject.time.send_timestamp;
         //potentially could be a problem if create time > timestamp
-        if(parsedObject.timestamp < parsedObject.time.send_timestamp) {
+        if(parsedObject.timestamp && parsedObject.timestamp < parsedObject.time.send_timestamp) {
             analysis.timestamp_mismatched += 1;
         }
 
@@ -284,25 +305,31 @@ eachLine('obfuscated_data', function (json) {
 
 //data aggregation complete, now do post processing
 }).then(function() {
-    //sort timestamps
-    analysis.timestamps.sort();
-    analysis.eventCount = _.keys(analysis.observed).length;
-    analysis.uniqueDeviceCount = _.keys(analysis.observedDevices).length;
-    analysis.firstLaunches = _.keys(analysis.launchedDevices).length;
+    _.forEach(pros, function(analysis) {
+        //sort timestamps
+        analysis.timestamps.sort();
+        analysis.eventCount = _.keys(analysis.observed).length;
+        analysis.uniqueDeviceCount = _.keys(analysis.observedDevices).length;
+        analysis.firstLaunches = _.keys(analysis.launchedDevices).length;
+    });
 }).then(function () {
     //display data:
-    console.log(dio(_.omit(analysis,[
-                    "timestamps",
-                    "observed",
-                    "observedDevices",
-                    "visitorOrigin",
-                    "launchedDevices",
-                    "lastSeenDevices"
-                    ]), "  "));
-    //display top 5 longest activity users
-    console.log(longestNActivityTimeDevices(analysis, 5));
-    console.log(getDailyUsageHistogramInRange(analysis, 0, 1470316951330));
-    console.log(getTopNCountriesByNumEvents(analysis, 10));
+    _.forEach(_.keys(pros), function(name) {
+        var analysis = pros[name];
+        console.log(name);
+        console.log(dio(_.omit(analysis,[
+                        "timestamps",
+                        "observed",
+                        "observedDevices",
+                        "visitorOrigin",
+                        "launchedDevices",
+                        "lastSeenDevices"
+                        ]), "  "));
+        //display top 5 longest activity users
+        console.log(longestNActivityTimeDevices(analysis, 5));
+        console.log(getDailyUsageHistogramInRange(analysis, 0, 1470316951330));
+        console.log(getTopNCountriesByNumEvents(analysis, 10));
+    });
 
 });
 
