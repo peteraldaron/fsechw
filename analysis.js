@@ -2,9 +2,6 @@ var _ = require('lodash'),
     Promise = require('bluebird'),
     lineReader = require('line-reader');
 
-
-
-
 //debug:
 //TODO: delete later
 //
@@ -49,8 +46,13 @@ var analysis = {
     observed : {}, //observed event ids
     duplicate_count : {}, //duplicated event ids with count
     observed_devices : {}, //obs dev ids-> rhs=timestamp of first visit
+    last_seen_devices : {}, //obs dev ids-> rhs=timestamp of last visit
     event_type_stat : {}, //event type statistics, populated on the fly
-    device_type_count: {}, //android/iOS count
+    device_type_count: {
+        android : 0,
+        ios: 0,
+        other: 0
+    }, //android/iOS/other count
     visitor_origin: {} //visitor origin (country-city)
 };
 
@@ -79,6 +81,14 @@ function hashJSON(obj) {
  * continuous session analysis
  */
 function persistentSessionCount(obj) {
+}
+
+/**
+ * get users with overall longest time of usage
+ * as define:
+ * ‘activity time’ max('first event – latest event')
+ */
+function longestNActivityTime(statObj, N) {
 }
 
 
@@ -122,8 +132,33 @@ eachLine('tf', function (json) {
             analysis.observed_devices[parsedObject.device_id] =
                 parsedObject.time.create_timestamp;
         }
+        //update last seen timestamp:
+        analysis.last_seen_devices[parsedObject.device_id] =
+                parsedObject.time.create_timestamp;
+        //potentially could be a problem if create time > send time
+        if(parsedObject.time.create_timestamp > parsedObject.time.send_timestamp) {
+            console.error("umm");
+        }
+
         return parsedObject;
     }).then(function (parsedObject) {
+        //OS counting:
+        //same data can also be fetched from sender_info
+        if(parsedObject.device
+                && parsedObject.device.operating_system
+                && parsedObject.device.operating_system.kind) {
+            if(parsedObject.device.operating_system.kind.toLowerCase().match("android")){
+                analysis.device_type_count.android+=1;
+            } else if(parsedObject.device.operating_system.kind.toLowerCase().match("ios")){
+                analysis.device_type_count.ios+=1;
+            } else {
+                analysis.device_type_count.other+=1;
+            }
+        }
+        return parsedObject;
+    }).then(function (parsedObject) {
+        //country counting:
+        return parsedObject;
     });
 }).then(function () {
     //debug: display
