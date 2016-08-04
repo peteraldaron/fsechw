@@ -68,7 +68,7 @@
       using a map (JS object).
   \item Afterwards, the types of events are being counted for the specific
       product.
-  \item Then, the program accounts for the devices seen, as well as the first
+  \item Then, the program accounts for the devices seen (unique devices), as well as the first
       launch count from unique devices for the specific product. This stage also
       records the first and last seen time of the device for longest session
       computation.
@@ -180,6 +180,8 @@
       is from the US.
   \item product-d has only iOS users.
   \item all users of product-d come from Finland.
+  \item product-b has the most number of unique devices (36558), followed by product-a
+      (1477), product-c (296) and product-d (38).
   \item There are quite a few windows machines installed on QEMU.
   \ee
 
@@ -191,7 +193,8 @@
   It would also be interesting to analyze the geographical and
   operating-systemic correlation with (in-app) purchases. Perhaps certain users
   from certain geographical regions and/or certain platforms have a particular
-  purchasing behavior? These are questions that can be further explored and
-  analyzed through the data.
+  purchasing behavior? Or if several users are ``power users'' that contributed
+  the most of the events comparing to other users? These are questions that can
+  be further explored and analyzed through the data.
 
 \end{document}
