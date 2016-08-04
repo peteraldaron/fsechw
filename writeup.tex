@@ -102,7 +102,7 @@
   event.time.(send or create)\_timestamp. This is likely due to the possibility
   that the client's time is not synchronized with the network. Another
   abnormality is that some events do not have the timestamp field. In this case,
-  I use the event.time.send\_timestamp for time accouting instead.
+  I use the event.time.send\_timestamp for time accounting instead.
   \subsubsection{Which device has longest `activity time' max(`first event –
   latest event')}
   Product-a's device with the longest activity time is e99b76bc26efd88aa31ab573ff3d8e72e3ee4b91, and the
@@ -126,7 +126,7 @@
   \subsubsection{How would you store the data so that further processing and/or
   analysis would be easy?}
   Since the data is already in JSON format, the easiest way to store the data is
-  puting it into MongoDB, which stores the data in JSON format and also supports
+  putting it into MongoDB, which stores the data in JSON format and also supports
   advanced querying, such as counting out-of-the-box.
 
   \subsubsection{If you should prepare a maintenance time for the processor,
@@ -180,8 +180,18 @@
       is from the US.
   \item product-d has only iOS users.
   \item all users of product-d come from Finland.
+  \item There are quite a few windows machines installed on QEMU.
   \ee
 
   \section{Future Work}
+  If more time were available, I would really like to explore a bit more into
+  the purchase data and the implications associated with the data. I have
+  noticed a lot of voucher purchases that have failed due to voucher code error,
+  and it could be interesting to find out what is going on in these situations.
+  It would also be interesting to analyze the geographical and
+  operating-systemic correlation with (in-app) purchases. Perhaps certain users
+  from certain geographical regions and/or certain platforms have a particular
+  purchasing behavior? These are questions that can be further explored and
+  analyzed through the data.
 
 \end{document}
