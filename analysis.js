@@ -55,6 +55,7 @@ var analysis = {
     observedDevices : {}, //obs dev ids-> rhs=timestamp of first visit
     lastSeenDevices : {}, //obs dev ids-> rhs=timestamp of last visit
     eventTypeStat : {}, //event type statistics, populated on the fly
+    launchedDevices : {}, //launch type statistics, populated on the fly
     firstLaunches : 0,
     duplicatedEvents : 0,
     timestamp_mismatched: 0,
@@ -163,8 +164,12 @@ eachLine('tf', function (json) {
                 && parsedObject.time){
             //first seen:
             analysis.observedDevices[parsedObject.device.device_id] =
-                //parsedObject.time.create_timestamp;
                 parsedObject.timestamp;
+        }
+        //log event if event is launch:
+        if(!analysis.launchedDevices[parsedObject.device.device_id]
+                && parsedObject.type === "launch") {
+            analysis.launchedDevices[parsedObject.device.device_id] = 1;
         }
         //update last seen timestamp:
         analysis.lastSeenDevices[parsedObject.device.device_id] =
@@ -251,12 +256,15 @@ eachLine('tf', function (json) {
     analysis.timestamps.sort();
     analysis.eventCount = _.keys(analysis.observed).length;
     analysis.deviceCount = _.keys(analysis.observedDevices).length;
+    analysis.firstLaunches = _.keys(analysis.launchedDevices).length;
 }).then(function () {
     //debug: display
     console.log(dio(_.omit(analysis,[
                     "timestamps",
                     "observed",
                     "observedDevices",
+                    "visitorOrigin",
+                    "launchedDevices",
                     "lastSeenDevices"
                     ]), "  "));
 });
