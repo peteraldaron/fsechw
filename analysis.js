@@ -53,7 +53,9 @@ var analysis = {
         ios: 0,
         other: 0
     }, //android/iOS/other count
-    visitor_origin: {} //visitor origin (country-city)
+    visitor_origin: {
+        unknown : 0
+    } //visitor origin (country-city)
 };
 
 var inputFile = "tf";
@@ -144,9 +146,7 @@ eachLine('tf', function (json) {
     }).then(function (parsedObject) {
         //OS counting:
         //same data can also be fetched from sender_info
-        if(parsedObject.device
-                && parsedObject.device.operating_system
-                && parsedObject.device.operating_system.kind) {
+        if(_.has(parsedObject, "device.operating_system.kind")) {
             if(parsedObject.device.operating_system.kind.toLowerCase().match("android")){
                 analysis.device_type_count.android+=1;
             } else if(parsedObject.device.operating_system.kind.toLowerCase().match("ios")){
@@ -158,6 +158,29 @@ eachLine('tf', function (json) {
         return parsedObject;
     }).then(function (parsedObject) {
         //country counting:
+        //HUOM! some country fields might not be populated
+        if(_.has(parsedObject, "sender_info.geo.country")){
+            if(!_.has(analysis, "visitor_origin."+parsedObject.sender_info.geo.country)) {
+                analysis.visitor_origin[parsedObject.sender_info.geo.country] = {
+                    aggregate : 1
+                };
+                if(!_.has(parsedObject, "sender_info.geo.city")) {
+                    analysis.visitor_origin[parsedObject.sender_info.geo.country][parsedObject.sender_info.geo.city] = 1;
+                }
+            } else {
+                //country already exist
+                analysis.visitor_origin[parsedObject.sender_info.geo.country].aggregate += 1;
+                if(!_.has(parsedObject, "sender_info.geo.city")) {
+                    analysis.visitor_origin[parsedObject.sender_info.geo.country][parsedObject.sender_info.geo.city] = 1;
+                } else {
+                    analysis.visitor_origin[parsedObject.sender_info.geo.country][parsedObject.sender_info.geo.city] += 1;
+                }
+            }
+
+        } else {
+            //direct to unknown:
+            analysis.visitor_origin.unknown += 1;
+        }
         return parsedObject;
     });
 }).then(function () {
