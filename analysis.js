@@ -5,14 +5,14 @@
  * August 4, 2016
  */
 
-
 var _ = require('lodash'),
     Promise = require('bluebird'),
     lineReader = require('line-reader');
 
-//debug:
-//TODO: delete later
-//
+//debug: pretty printer
+//source:
+//https://stackoverflow.com/questions/130404/javascript-data-formatting-pretty-printer
+//credit: gprathour, PhiLho
 function dio(obj, indent)
 {
   var result = "";
@@ -148,7 +148,7 @@ function getTopNCountriesByNumEvents(statObj, N) {
  */
 var eachLine = Promise.promisify(lineReader.eachLine);
 
-eachLine('tf', function (json) {
+eachLine('obfuscated_data', function (json) {
     //parse json
     Promise.resolve(JSON.parse(json))
     .then(function (parsedObject) {
@@ -290,7 +290,7 @@ eachLine('tf', function (json) {
     analysis.uniqueDeviceCount = _.keys(analysis.observedDevices).length;
     analysis.firstLaunches = _.keys(analysis.launchedDevices).length;
 }).then(function () {
-    //debug: display
+    //display data:
     console.log(dio(_.omit(analysis,[
                     "timestamps",
                     "observed",
@@ -299,6 +299,7 @@ eachLine('tf', function (json) {
                     "launchedDevices",
                     "lastSeenDevices"
                     ]), "  "));
+    //display top 5 longest activity users
     console.log(longestNActivityTimeDevices(analysis, 5));
     console.log(getDailyUsageHistogramInRange(analysis, 0, 1470316951330));
     console.log(getTopNCountriesByNumEvents(analysis, 10));
