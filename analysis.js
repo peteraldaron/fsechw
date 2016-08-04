@@ -60,54 +60,44 @@ var analysis = {
     duplicatedEvents : 0,
     timestamp_mismatched: 0,
     deviceTypeCount: {
-        android : 0,
-        ios: 0,
-        nonMobile: 0,
-        other: 0
+        android : {
+            count : 0
+        },
+        ios: {
+            count : 0
+        },
+        nonMobile: {
+            count : 0
+        },
+        other: {
+            count : 0
+        }
     }, //android/iOS/other count
     timestamps: [],
     visitorOrigin: {
-        unknown : 0
+        unknown : {
+            aggregate: 0
+        }
     } //visitor origin (country-city)
 };
-
-/**
- * we can pinpoint unique device by device->deviceid
- */
-function hashJSON(obj) {
-    if(obj && obj.sender_info && obj.sender_info.device
-           && obj.sender_info.device.device_id
-           && obj.time
-           && obj.time.create_timestamp
-           && obj.event_id) {
-        return obj.sender_info.device.device_id
-               + obj.time.create_timestamp
-               + obj.event_id;
-    } else {
-        console.error("error at obj.");
-        console.error(obj);
-        return -1;
-    }
-}
-
-/**
- * continuous session analysis
- */
-function persistentSessionCount(obj) {
-}
 
 /**
  * get users with overall longest time of usage
  * as defined:
  * ‘activity time’ max('first event – latest event')
  */
-function longestNActivityTime(statObj, N) {
-}
-
-/**
- * get duplicated events, with counts
- */
-function getDuplicatedEvents(statObj) {
+function longestNActivityTimeDevices(statObj, N) {
+    return _
+        .chain(statObj.observedDevices)
+        .keys()
+        .map(function(devid) {
+            return [devid, statObj.lastSeenDevices[devid] - statObj.observedDevices[devid]];
+        })
+        .sortBy(function(item) {
+            return item[1];
+        })
+        .slice(_.size(statObj.observedDevices) - N)
+        .value();
 }
 
 /**
@@ -121,17 +111,44 @@ function getDuplicatedEvents(statObj) {
  */
 
 function getDailyUsageHistogramInRange(statObj, startDateTime, endDateTime) {
+    //statobj.timestamps must be sorted
+    //start index is inclusive
+    var startIdx = _.sortedIndexBy(statObj.timestamps, startDateTime),
+        endIdx = _.sortedIndexBy(statObj.timestamps, endDateTime);
+    return _
+        .chain(statObj.timestamps)
+        .map(function (time) {
+            //to hours of day:
+            var dateObj = new Date(time);
+            //note: this is local time
+            return dateObj.getHours();
+        })
+        .slice(startIdx, endIdx)
+        .countBy()
+        .value();
 }
 
-//TODO: sort by event interaction per user
-
+/**
+ * get top N countries of user origin by number of events
+ */
+function getTopNCountriesByNumEvents(statObj, N) {
+    return _
+        .chain(statObj.visitorOrigin)
+        .keys()
+        .map(function (maa) {
+            return [maa, statObj.visitorOrigin[maa].aggregate];
+        })
+        .sortBy(function(entry) { return entry[1];})
+        .slice(_.size(statObj.visitorOrigin) - N)
+        .value();
+}
 
 /**
  * main pipeline
  */
 var eachLine = Promise.promisify(lineReader.eachLine);
 
-eachLine('obfuscated_data', function (json) {
+eachLine('tf', function (json) {
     //parse json
     Promise.resolve(JSON.parse(json))
     .then(function (parsedObject) {
@@ -187,14 +204,32 @@ eachLine('obfuscated_data', function (json) {
         if(_.has(parsedObject, "device.operating_system.kind")) {
             var device_name = parsedObject.device.operating_system.kind.toLowerCase();
             if(device_name.match("android")){
-                analysis.deviceTypeCount.android+=1;
+                analysis.deviceTypeCount.android.count+=1;
+
+                //populate types of specific device
+                analysis.deviceTypeCount.android[parsedObject.type] =
+                    analysis.deviceTypeCount.android[parsedObject.type] ?
+                    analysis.deviceTypeCount.android[parsedObject.type]+1
+                    :1;
             } else if(device_name.match("ios")){
-                analysis.deviceTypeCount.ios+=1;
+                analysis.deviceTypeCount.ios.count+=1;
+                analysis.deviceTypeCount.ios[parsedObject.type] =
+                    analysis.deviceTypeCount.ios[parsedObject.type] ?
+                    analysis.deviceTypeCount.ios[parsedObject.type]+1
+                    :1;
             } else if(device_name.match("windows")
                     || device_name.match("osx")){
-                analysis.deviceTypeCount.nonMobile+=1;
+                analysis.deviceTypeCount.nonMobile.count+=1;
+                analysis.deviceTypeCount.nonMobile[parsedObject.type] =
+                    analysis.deviceTypeCount.nonMobile[parsedObject.type] ?
+                    analysis.deviceTypeCount.nonMobile[parsedObject.type]+1
+                    :1;
             } else {
-                analysis.deviceTypeCount.other+=1;
+                analysis.deviceTypeCount.other.count+=1;
+                analysis.deviceTypeCount.other[parsedObject.type] =
+                    analysis.deviceTypeCount.other[parsedObject.type] ?
+                    analysis.deviceTypeCount.other[parsedObject.type]+1
+                    :1;
             }
         }
         return parsedObject;
@@ -234,11 +269,8 @@ eachLine('obfuscated_data', function (json) {
 
         } else {
             //direct to unknown:
-            analysis.visitorOrigin.unknown += 1;
+            analysis.visitorOrigin.unknown.aggregate += 1;
         }
-        return parsedObject;
-    }).then(function (parsedObject) {
-
         return parsedObject;
     }).catch(function(err) {
         //count duplicate events
@@ -267,6 +299,10 @@ eachLine('obfuscated_data', function (json) {
                     "launchedDevices",
                     "lastSeenDevices"
                     ]), "  "));
+    console.log(longestNActivityTimeDevices(analysis, 5));
+    console.log(getDailyUsageHistogramInRange(analysis, 0, 1470316951330));
+    console.log(getTopNCountriesByNumEvents(analysis, 10));
+
 });
 
 
