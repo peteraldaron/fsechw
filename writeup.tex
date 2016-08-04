@@ -127,12 +127,60 @@
   analysis would be easy?}
   Since the data is already in JSON format, the easiest way to store the data is
   puting it into MongoDB, which stores the data in JSON format and also supports
-  advanced querying, which supports couting out-of-the-box.
+  advanced querying, such as counting out-of-the-box.
 
   \subsubsection{If you should prepare a maintenance time for the processor,
   when would you do it in order to cause minimal impact to products?}
+  To answer this question, we need to know when are the products least active,
+  which can be acquired by making a histogram of the hours-of-day when all the events
+  are being sent. The hour with the least amount of events is the time when the
+  processor should be maintained.
+
+  If the maintenance for the processor is separate for each product, then the
+  best timings are:
+  product-a: 2AM,\\
+  product-b: 5AM,\\
+  product-c: 3AM,\\
+  product-d: 2AM.
+
+  If the maintenance for the processor needs to be the same for all products,
+  then the best timing is 5AM (15891 events).
+
+  It is easy to plot the histogram bars using the final results output from the
+  program. One will just need a plotting library.
+
+  \subsubsection{What kind of statistics do you think are interesting? How could
+  you visualize this?}
+  I also did statistics of the country-of-origin of these events for separate
+  products, as well as the operating system/platform count of events. These two
+  measurements are particularly interesting because, depending on the kind of
+  services the products provide, it might be interesting to know where the
+  users are coming from and what kinds of devices they use, to better serve the
+  customers. Both geographical location and platform (operating system)
+  information is available in the JSON data.
+
+  Geographical information can be visualized through plotting ``pins'' on a map,
+  such as services provided by Google Maps. The operating system data, on the
+  other hand, can be represented by pie charts.
 
   \subsection{Other Findings}
+  A list of findings that I have noticed:
+  \be
+  \item product-a has predominately mobile users, while Android users contribute
+      to the most to the number of actions.
+  \item product-a has the most actions from Finland, but also from other parts
+      of Europe, the US and Malaysia (MY).
+  \item product-b has about a quarter of events from mobile users, while Android
+      users contribute to the most to the amount of actions.
+  \item product-b has the most actions from Finland (over 90\%), and the rest
+      from other parts of Europe and the US.
+  \item product-c has only mobile users, and Android
+      users have the most number of actions.
+  \item product-c has the most actions from Finland (over 99.9\%), and the rest
+      is from the US.
+  \item product-d has only iOS users.
+  \item all users of product-d come from Finland.
+  \ee
 
   \section{Future Work}
 
