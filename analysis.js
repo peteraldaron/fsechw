@@ -1,3 +1,11 @@
+/**
+ * F-Secure "homework"
+ *
+ * Peter Zhang
+ * August 4, 2016
+ */
+
+
 var _ = require('lodash'),
     Promise = require('bluebird'),
     lineReader = require('line-reader');
@@ -43,22 +51,24 @@ function dio(obj, indent)
 
 
 var analysis = {
-    observed : {}, //observed event ids
-    duplicate_count : {}, //duplicated event ids with count
-    observed_devices : {}, //obs dev ids-> rhs=timestamp of first visit
-    last_seen_devices : {}, //obs dev ids-> rhs=timestamp of last visit
-    event_type_stat : {}, //event type statistics, populated on the fly
-    device_type_count: {
+    observed : {}, //observed event ids, rhs=count
+    observedDevices : {}, //obs dev ids-> rhs=timestamp of first visit
+    lastSeenDevices : {}, //obs dev ids-> rhs=timestamp of last visit
+    eventTypeStat : {}, //event type statistics, populated on the fly
+    firstLaunches : 0,
+    duplicatedEvents : 0,
+    timestamp_mismatched: 0,
+    deviceTypeCount: {
         android : 0,
         ios: 0,
+        nonMobile: 0,
         other: 0
     }, //android/iOS/other count
-    visitor_origin: {
+    timestamps: [],
+    visitorOrigin: {
         unknown : 0
     } //visitor origin (country-city)
 };
-
-var inputFile = "tf";
 
 /**
  * we can pinpoint unique device by device->deviceid
@@ -87,11 +97,32 @@ function persistentSessionCount(obj) {
 
 /**
  * get users with overall longest time of usage
- * as define:
+ * as defined:
  * ‘activity time’ max('first event – latest event')
  */
 function longestNActivityTime(statObj, N) {
 }
+
+/**
+ * get duplicated events, with counts
+ */
+function getDuplicatedEvents(statObj) {
+}
+
+/**
+ * get histogram of usage frequency within a day
+ * within given time range
+ *
+ * 1 bin = 1 hour of day
+ *
+ * args: statObj: the stat object
+ * startDateTime, endDateTime : timestamp in integer
+ */
+
+function getDailyUsageHistogramInRange(statObj, startDateTime, endDateTime) {
+}
+
+//TODO: sort by event interaction per user
 
 
 /**
@@ -106,53 +137,59 @@ eachLine('tf', function (json) {
         //event duplication count
         if (parsedObject.event_id) {
             if(analysis.observed[parsedObject.event_id]) {
-                if(!analysis.duplicate_count[parsedObject.event_id]) {
-                    analysis.duplicate_count[parsedObject.event_id] = 1;
-                } else {
-                    analysis.duplicate_count[parsedObject.event_id] += 1;
-                }
+                analysis.observed[parsedObject.event_id] += 1;
+                throw new Error('duplicate event id');
+                return null;
             } else {
                 analysis.observed[parsedObject.event_id] = 1;
+                //add timestamp to list:
+                analysis.timestamps.push(parsedObject.timestamp);
             }
         }
         return parsedObject;
 
     }).then(function (parsedObject) {
         //type accum:
-        if (!analysis.event_type_stat[parsedObject.type]) {
-            analysis.event_type_stat[parsedObject.type] = 1;
+        if (!analysis.eventTypeStat[parsedObject.type]) {
+            analysis.eventTypeStat[parsedObject.type] = 1;
         } else {
-            analysis.event_type_stat[parsedObject.type] += 1;
+            analysis.eventTypeStat[parsedObject.type] += 1;
         }
         return parsedObject;
 
     }).then(function (parsedObject) {
         //device first-seen-time record
-        if(!analysis.observed_devices[parsedObject.device_id]
+        if(!analysis.observedDevices[parsedObject.device.device_id]
                 && parsedObject.time){
             //first seen:
-            analysis.observed_devices[parsedObject.device_id] =
-                parsedObject.time.create_timestamp;
+            analysis.observedDevices[parsedObject.device.device_id] =
+                //parsedObject.time.create_timestamp;
+                parsedObject.timestamp;
         }
         //update last seen timestamp:
-        analysis.last_seen_devices[parsedObject.device_id] =
-                parsedObject.time.create_timestamp;
-        //potentially could be a problem if create time > send time
-        if(parsedObject.time.create_timestamp > parsedObject.time.send_timestamp) {
-            console.error("umm");
+        analysis.lastSeenDevices[parsedObject.device.device_id] =
+                parsedObject.timestamp;
+        //potentially could be a problem if create time > timestamp
+        if(parsedObject.timestamp < parsedObject.time.send_timestamp) {
+            analysis.timestamp_mismatched += 1;
         }
 
         return parsedObject;
     }).then(function (parsedObject) {
-        //OS counting:
+        //OS counting PER UNIQUE EVENT (not per unique device):
         //same data can also be fetched from sender_info
+        //HUOM! data also includes non-mobile visitors
         if(_.has(parsedObject, "device.operating_system.kind")) {
-            if(parsedObject.device.operating_system.kind.toLowerCase().match("android")){
-                analysis.device_type_count.android+=1;
-            } else if(parsedObject.device.operating_system.kind.toLowerCase().match("ios")){
-                analysis.device_type_count.ios+=1;
+            var device_name = parsedObject.device.operating_system.kind.toLowerCase();
+            if(device_name.match("android")){
+                analysis.deviceTypeCount.android+=1;
+            } else if(device_name.match("ios")){
+                analysis.deviceTypeCount.ios+=1;
+            } else if(device_name.match("windows")
+                    || device_name.match("osx")){
+                analysis.deviceTypeCount.nonMobile+=1;
             } else {
-                analysis.device_type_count.other+=1;
+                analysis.deviceTypeCount.other+=1;
             }
         }
         return parsedObject;
@@ -160,32 +197,68 @@ eachLine('tf', function (json) {
         //country counting:
         //HUOM! some country fields might not be populated
         if(_.has(parsedObject, "sender_info.geo.country")){
-            if(!_.has(analysis, "visitor_origin."+parsedObject.sender_info.geo.country)) {
-                analysis.visitor_origin[parsedObject.sender_info.geo.country] = {
+            if(!_.has(analysis, "visitorOrigin."
+                        + parsedObject.sender_info.geo.country)) {
+                analysis.visitorOrigin[parsedObject.sender_info.geo.country] = {
                     aggregate : 1
                 };
-                if(!_.has(parsedObject, "sender_info.geo.city")) {
-                    analysis.visitor_origin[parsedObject.sender_info.geo.country][parsedObject.sender_info.geo.city] = 1;
+                if(parsedObject.sender_info.geo.city) {
+                    analysis.visitorOrigin
+                        [parsedObject.sender_info.geo.country]
+                            [parsedObject.sender_info.geo.city] = 1;
                 }
             } else {
                 //country already exist
-                analysis.visitor_origin[parsedObject.sender_info.geo.country].aggregate += 1;
-                if(!_.has(parsedObject, "sender_info.geo.city")) {
-                    analysis.visitor_origin[parsedObject.sender_info.geo.country][parsedObject.sender_info.geo.city] = 1;
-                } else {
-                    analysis.visitor_origin[parsedObject.sender_info.geo.country][parsedObject.sender_info.geo.city] += 1;
+                analysis.visitorOrigin[parsedObject.sender_info.geo.country].aggregate += 1;
+                //populate city
+                if (parsedObject.sender_info.geo.city) {
+                    if(!_.has(analysis, "visitorOrigin."
+                                + parsedObject.sender_info.geo.country
+                                + "."
+                                + parsedObject.sender_info.geo.city)) {
+                        analysis.visitorOrigin
+                            [parsedObject.sender_info.geo.country]
+                                [parsedObject.sender_info.geo.city] = 1;
+                    } else {
+                        analysis.visitorOrigin
+                            [parsedObject.sender_info.geo.country]
+                                [parsedObject.sender_info.geo.city] += 1;
+                    }
                 }
             }
 
         } else {
             //direct to unknown:
-            analysis.visitor_origin.unknown += 1;
+            analysis.visitorOrigin.unknown += 1;
         }
         return parsedObject;
+    }).then(function (parsedObject) {
+
+        return parsedObject;
+    }).catch(function(err) {
+        //count duplicate events
+        if (err.message === 'duplicate event id') {
+            analysis.duplicatedEvents += 1;
+        }
+        else {
+            throw err;
+        }
     });
+
+//data aggregation complete, now do post processing
+}).then(function() {
+    //sort timestamps
+    analysis.timestamps.sort();
+    analysis.eventCount = _.keys(analysis.observed).length;
+    analysis.deviceCount = _.keys(analysis.observedDevices).length;
 }).then(function () {
     //debug: display
-    //console.log(dio(analysis, "  "));
+    console.log(dio(_.omit(analysis,[
+                    "timestamps",
+                    "observed",
+                    "observedDevices",
+                    "lastSeenDevices"
+                    ]), "  "));
 });
 
 
