@@ -131,7 +131,7 @@ function getDailyUsageHistogramInRange(statObj, startDateTime, endDateTime) {
  */
 var eachLine = Promise.promisify(lineReader.eachLine);
 
-eachLine('tf', function (json) {
+eachLine('obfuscated_data', function (json) {
     //parse json
     Promise.resolve(JSON.parse(json))
     .then(function (parsedObject) {
@@ -255,7 +255,7 @@ eachLine('tf', function (json) {
     //sort timestamps
     analysis.timestamps.sort();
     analysis.eventCount = _.keys(analysis.observed).length;
-    analysis.deviceCount = _.keys(analysis.observedDevices).length;
+    analysis.uniqueDeviceCount = _.keys(analysis.observedDevices).length;
     analysis.firstLaunches = _.keys(analysis.launchedDevices).length;
 }).then(function () {
     //debug: display
