@@ -1,91 +1,94 @@
 #include <iostream>
 #include <cstdint>
 #include <vector>
+#include <unordered_map>
 
-#define isPowerOfTwo(number) (number & (number-1) == 0)
+#define isPowerOfTwo(number) ((number & (number-1)) == 0)
+
+#define divideByTwoIfEven(number) while(number%2==0 && number > 0) {number/=2;}
+
+#define getOddFactor(number) ((number / 2) % 2 ? number/2 : (number/2)-1)
+
+#define getEvenFactor(number) ((number/2) % 2 ? (number/2)-1 : number/2)
+
+std::unordered_map<uint64_t, uint64_t> table;
+using namespace std;
 
 uint64_t take(uint64_t num)
 {
-    //if is power of 2 or if is smaller than 3, return 1
-    if(isPowerOfTwo(num) || num < 3)
-    {
-        return 1;
-    }
-    //otherwise if number divisible by 2,
-    //tail call:
-    if(num % 2 == 0)
-    {
-        return take(num/2);
-    }
-    else
-    {
-        //here, number must not be divisible by 2 due to the previous condition
-        uint64_t result = 0;
-        auto ptr = 0;
+    //shortcuts:
+    if(isPowerOfTwo(num)) return 1;
+    if(table.count(num)) return table[num];
 
-        //do a out-of-sequence tree traversal....
-        //std::vector<uint64_t> q;
-        //q.push_back(num);
-        uint64_t q[64];
-        q[ptr++] = num;
+    //make number odd if even
+    divideByTwoIfEven(num);
 
-        while(ptr>0)
+    //factor decomposition:
+    std::vector<uint64_t> factors;
+    factors.push_back(num);
+
+    auto root = num;
+
+    while(factors.back() > 1)
+    {
+        factors.push_back(num/2);
+        factors.push_back((num/2)-1);
+        num = factors.back();
+    }
+    //for(auto i:factors)
+    //    cerr<<i<<endl;
+    //build search tree bottom-up, with DP on lookup table
+    while(factors.size())
+    {
+        auto factor = factors.back();
+        factors.pop_back();
+
+        if(table.count(factor)) continue;
+
+        auto odd = getOddFactor(factor);
+        auto even = getEvenFactor(factor);
+
+        //cerr<<factor<<"is power of 2:"<<even<<" "<<isPowerOfTwo(even)<<endl;
+
+        if(isPowerOfTwo(even))
         {
-            uint64_t front = q[--ptr];
-
-            if(isPowerOfTwo(front) || front<3)
-            {
-                result+=1;
-                continue;
-            }
-
-            uint64_t n = front / 2;
-
-            //essentially two subtrees: n and n-1
-            //one of the two is divisible by 2
-            auto even = n % 2 ? n-1 : n;
-            auto odd = even == n ? n-1 : n;
-            //std::cerr<<odd<<" "<<even<<" ptr:"<<ptr<<std::endl;
-            //left element (even)
-            if(isPowerOfTwo(even) || even<3)
-            {
-                result+=1;
-            }
-            else{
-                //divide the even element by 2 until no longer is even:
-                while(!(even % 2)) even/=2;
-                if(even<3)
-                {
-                    result+=1;
-                }
-                //push to next wavefront
-                else
-                {
-                    q[ptr++] = even;
-                    //q.push_back(even);
-                }
-            }
-            //right element (odd):
-            if(odd<3)
-            {
-                result+=1;
-            }
-            else
-            {
-                //q.push_back(odd);
-                q[ptr++] = odd;
-            }
+            table[even] = 1;
         }
-        return result;
+        else
+        {
+            divideByTwoIfEven(even);
+        }
+
+        if(table.count(odd) && table.count(even))
+        {
+            table[factor] = table[odd] + table[even];
+        }
+        if (!table.count(odd))
+        {
+            factors.push_back(odd);
+        }
+        if (!table.count(even))
+        {
+            factors.push_back(even);
+        }
     }
+    //for(auto i:table)
+    //    cerr<<i.first<<" "<<i.second<<endl;
+    return table[root];
+
 }
 
 int main()
 {
+    //initialize table:
+    table[0] = 1;
+    table[1] = 1;
+    //table[2] = 1;
     //for(auto x = 0; x<20; ++x)
     //{
     //    std::cout<<take(x)<<std::endl;
     //}
+    //std::cout<<take(5)<<std::endl;
     std::cout<<take(123456789012345678)<<std::endl;
     return 0;
 }
