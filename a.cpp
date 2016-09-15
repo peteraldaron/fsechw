@@ -21,17 +21,17 @@ uint64_t take(uint64_t num)
     {
         //here, number must not be divisible by 2 due to the previous condition
         uint64_t result = 0;
-        auto max = 0;
+        auto ptr = 0;
 
         //do a out-of-sequence tree traversal....
-        std::vector<uint64_t> q;
-        q.push_back(num);
+        //std::vector<uint64_t> q;
+        //q.push_back(num);
+        uint64_t q[64];
+        q[ptr++] = num;
 
-        while(q.size())
+        while(ptr>0)
         {
-            if(q.size() > max) max=q.size();
-            uint64_t front = q.back();
-            q.pop_back();
+            uint64_t front = q[--ptr];
 
             if(isPowerOfTwo(front) || front<3)
             {
@@ -61,8 +61,8 @@ uint64_t take(uint64_t num)
                 //push to next wavefront
                 else
                 {
-                    //q[ptr++] = even;
-                    q.push_back(even);
+                    q[ptr++] = even;
+                    //q.push_back(even);
                 }
             }
             //right element (odd):
@@ -72,11 +72,10 @@ uint64_t take(uint64_t num)
             }
             else
             {
-                q.push_back(odd);
-                //q[ptr++] = odd;
+                //q.push_back(odd);
+                q[ptr++] = odd;
             }
         }
-        std::cerr<<"max:"<<max<<std::endl;
         return result;
     }
 }
@@ -87,6 +86,6 @@ int main()
     //{
     //    std::cout<<take(x)<<std::endl;
     //}
-    std::cout<<take(123456789)<<std::endl;
+    std::cout<<take(123456789012345678)<<std::endl;
     return 0;
 }
