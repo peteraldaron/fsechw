@@ -2,12 +2,12 @@
 #include <memory>
 #include <mutex>
 #include <functional>
+#include <stdexcept>
 
 namespace TSMap
 {
-
 /**
- * since stl container is disabled
+ * since stl containers are disabled
  * implement our own pair
  */
 template <typename FirstT, typename SecondT>
@@ -16,11 +16,29 @@ struct pair
     FirstT first;
     SecondT second;
 
-    pair(const FirstT& first, const SecondT &second)
+    pair() {}
+
+    pair(const FirstT &first, const SecondT &second)
         : first(first),
           second(second)
     {}
-}
+
+    /**
+     * copy constructor
+     */
+    pair(const pair<FirstT, SecondT> & rhs)
+    {
+    	this->first = rhs.first;
+    	this->second = rhs.second;
+    }
+
+    pair<FirstT, SecondT> & operator=(const pair<FirstT, SecondT>& rhs)
+    {
+    	this->first = rhs.first;
+    	this->second = rhs.second;
+    	return *this;
+    }
+};
 
 /**
  * similar to std::make_pair
@@ -33,54 +51,190 @@ pair<FirstT, SecondT> make_pair(
     return pair<FirstT, SecondT>(first, second);
 }
 
-template <typename KeyT>
-struct WrappedKeyObject
+namespace utility
 {
-    KeyT key;
-    bool isPopulated;
-    std::mutex keyLock;
 
-    /**
-     * default constructor
-     */
-    WrappedKeyObject()
-        : isPopulated(false)
-    {}
+/**
+ * a "bucket" in map for hash function level collision
+ * needs to be thread-safe at this level.
+ */
+template <typename KeyT, typename ValueT>
+class KVPairList
+{
+	std::mutex mutex;
+	std::unique_lock<std::mutex> lock;
+	std::shared_ptr<pair<KeyT, ValueT> > list;
+	size_t capacity;
+	size_t length;
+	//defaults capacity to 32
+public:
+	KVPairList() :
+		list(new pair<KeyT, ValueT>[32], std::default_delete<pair<KeyT, ValueT>[]>()),
+		lock(mutex),
+		capacity(32),
+		length(0)
+	{}
 
-    WrappedKeyObject(const KeyT &key)
-        : isPopulated(true),
-          key(key)
-    {}
+	/**
+	 * copy constructor for resizing
+	 */
+	KVPairList(const KVPairList<KeyT, ValueT> & rhs) :
+		list(rhs.list),
+		capacity(rhs.capacity),
+		length(rhs.length),
+		lock(mutex)
+	{}
 
-    /**
-     * overloaded assignment operator
-     * for copying
-     */
-    WrappedKeyObject& operator=(const WrappedKeyObject &rhs)
-    {
-        this->key = rhs.key;
-        this->isPopulated = rhs.isPopulated;
-    }
+	/**
+	 * operator= for assignment
+	 *
+	 */
+	KVPairList & operator=(const KVPairList<KeyT, ValueT> rhs)
+	{
+		//need to wait for mutex on both lists
+		rhs.lock.lock();
+		lock.lock();
 
-    /**
-     * copy constructor
-     *
-     * note: since mutex is not copy-assignable, create a new mutex instance on
-     * copying
-     */
-    WrappedKeyObject(const WrappedKeyObject & rhs)
-    {
-        key = rhs.key;
-        isPopulated = rhs.isPopulated;
-    }
+		list = rhs.list;
+		capacity = rhs.capacity;
+		length = rhs.length;
+
+		lock.unlock();
+		rhs.lock.unlock();
+
+		return *this;
+	}
+
+	size_t size()
+	{
+		//acquire lock:
+		lock.lock();
+		auto retVal = length;
+		lock.unlock();
+		return retVal;
+	}
+
+	/**
+	 * insert key-value pair if key didnt exist in list
+	 * otherwise update preexisting key's value
+	 */
+	void upsert(const pair<KeyT, ValueT> &kv)
+	{
+		//acquire lock:
+		lock.lock();
+
+		if(length >= capacity)
+		{
+			resize((size_t)capacity*1.5);
+		}
+		//if key exists in list, update
+		if(auto i = indexOf(kv.first) != -1)
+		{
+			std::cerr<<"index found at "<<i<<std::endl;
+			list.get()[i].second = kv.second;
+		}
+		else
+		{
+			this->list.get()[length++] = kv;
+		}
+		lock.unlock();
+	}
+	void erase(const KeyT &key)
+	{
+		//erase object with given key and "move" all elements after removed element
+		lock.lock();
+		//linear search
+		if(auto i = indexOf(key) != -1)
+		{
+			for(auto j=i;j<length-1;++j)
+			{
+				std::cerr<<"index found at "<<i<<std::endl;
+				list.get()[j] = list.get()[j+1];
+			}
+			--length;
+		}
+		//if element not found in list, it is considered to be ``removed''
+		lock.unlock();
+	}
+
+	/**
+	 * return 1 if key exists in list
+	 * 0 otherwise
+	 */
+	size_t count(const KeyT &key)
+	{
+		lock.lock();
+		auto count = indexOf(key) == -1 ? 0 : 1;
+		lock.unlock();
+		return count;
+	}
+
+
+	/**
+	 * get object with given key
+	 */
+	ValueT & operator[](const KeyT & key)
+	{
+		lock.lock();
+		if(auto i = indexOf(key) != -1)
+		{
+			auto retVal = list.get()[i];
+			lock.unlock();
+			return retVal;
+		}
+		//else:
+		lock.unlock();
+		//throw error:
+		throw new std::invalid_argument("invalid key given in KVList");
+	}
+
+	friend class TSMap;
+
+private:
+	/**
+	 * return index of key-value pair if key exists in list
+	 * -1 otherwise
+	 *
+	 * not thread safe
+	 */
+
+	size_t indexOf(const KeyT &key)
+	{
+		auto index = -1;
+		for(auto i=0;i<length;++i)
+		{
+			if(list.get()[i].first == key)
+			{
+				index = i;
+				break;
+			}
+		}
+		return index;
+	}
+	void resize(size_t newCapacity)
+	{
+		//do nothing
+		if(newCapacity == capacity) return;
+
+		if(newCapacity >= length)
+		{
+			std::shared_ptr<pair<KeyT, ValueT> >
+				newList(new pair<KeyT, ValueT>[(size_t)(newCapacity)]);
+			//copy to newlist:
+			for(auto i=0;i<this->length;++i){
+				newList.get()[i] = list.get()[i];
+			}
+		}
+		else
+		{
+			//throw error
+			throw new std::invalid_argument(
+					"new capacity in KVPairList::resize is smaller than current length");
+		}
+	}
 };
 
-template <typename KeyT>
-WrappedKeyObject<KeyT> make_wrapped_key(const KeyT &key)
-{
-    return WrappedKeyObject<KeyT>(key);
-}
-
+}//end utility namespace
 
 
 /**
@@ -92,29 +246,34 @@ template <typename KeyT, typename ValueT>
 class TSMap
 {
 private:
-    std::shared_ptr<ValueT> values;
-    std::shared_ptr<WrappedKeyObject<KeyT> > keys;
-    std::mutex globalLockMutex;
+    std::shared_ptr<utility::KVPairList<KeyT, ValueT> > buckets;
     size_t tableSize;
     std::hash<KeyT> hashFunc;
+
 public:
     /**
-     * default constructor is deleted
+     * default constructor: set bucket size to 128
      */
-    TSMap() = delete;
+    TSMap() :
+    	buckets(new utility::KVPairList<KeyT, ValueT>[128],
+    			std::default_delete<utility::KVPairList<KeyT, ValueT>[] >()),
+		tableSize(128)
+	{}
 
-    TSMap(size_t tableSize)
-        : keys(new WrappedKeyObject<KeyT>[tableSize], std::default_delete< WrappedKeyObject<KeyT>[]>()),
-          values(new ValueT[tableSize], std::default_delete<ValueT[]>()),
-          tableSize(tableSize)
+    TSMap(size_t tableSize) :
+    	buckets(new utility::KVPairList<KeyT, ValueT>[tableSize],
+    			std::default_delete<utility::KVPairList<KeyT, ValueT>[] >()),
+		tableSize(tableSize)
     {}
 
     ~TSMap()
-    {
-    }
+    {}
 
     void deleteByKey(const KeyT& key)
     {
+        auto hashKey = hashFunc(key) % tableSize;
+        auto bucket = buckets.get()[hashKey];
+        bucket.erase(key);
     }
 
     /**
@@ -125,101 +284,59 @@ public:
      */
     void insert(const KeyT &key, const ValueT &value)
     {
-        std::unique_lock<std::mutex> glockTest(this->globalLockMutex, std::defer_lock);
-        //hash key:
         auto hashKey = hashFunc(key) % tableSize;
-        //if entry at corresponding hash key is not populated,
-        //store key and value pair
-        //TODO: implement thread safety here
-        if(!(keys.get()[hashKey].isPopulated))
-        {
-            *((keys.get()+hashKey)->key) = key;
-            *(values.get()+hashKey) = value;
-        }
-        else
-        {
-            //is there really a conflict? check actual hash key of key object
-            //TODO: implement thread safety here
-            auto originalKeyHash = hashFunc(key);
-            auto storedKeyHash = hashFunc(keys.get()[hashKey].key);
-            if(originalKeyHash == storedKeyHash)
-            {
-                //key conflict, update stored value object to new value
-                *(values.get()+hashKey) = value;
-            }
-            //else, false positive, consider rehashing
-            else
-            {
-            }
-
-        }
-
+        //insert to corresponding bucket
+        auto bucket = buckets.get()[hashKey];
+        bucket.upsert(make_pair(key, value));
     }
-    void lookup(const KeyT &key)
+
+    ValueT& lookup(const KeyT &key)
     {
         auto hashKey = hashFunc(key) % tableSize;
-        //try to acquire lock on given key
-
+        auto bucket = buckets.get()[hashKey];
+        return bucket[key];
     }
+
     /**
-     * resizing the hashmap to given size
+     * resizing the number of hashmap buckets to the given size
      *
      * this is a blocking call
      */
     void resize(size_t newSize)
     {
-        std::unique_lock<std::mutex> globalLock(this->globalLockMutex);
-        globalLock.lock();
-        rehash(newSize);
-        globalLock.unlock();
-    }
+    	auto temp_buckets = buckets;
+    	//need to acquire locks on ALL buckets
+    	//note: this operation is required before the copying takes place
+    	for(auto i=0;i<this->tableSize;++i)
+    	{
+    		temp_buckets.get()[i].lock.lock();
+    	}
+    	//build new buckets with given size:
+    	std::shared_ptr<utility::KVPairList<KeyT, ValueT> >
+			newBuckets(new utility::KVPairList<KeyT, ValueT>[newSize],
+					std::default_delete<utility::KVPairList<KeyT, ValueT> >());
 
-    /**
-     * for debugging only
-     * no thread safety guaranteed
-     */
-    pair<KeyT, ValueT> KVPairAtIndex(size_t index)
-    {
-        std::unique_lock<std::mutex> lockKey(keys.get()[index].mutex);
-        lockKey.lock();
-        auto kvpair = make_pair(keys.get()[index].key, values.get()[index]);
-        lockKey.unlock();
-        return kvpair;
-    }
-
-private:
-    /**
-     * rehash the map according to current table size
-     *
-     * this operation must be done in a single thread under a lock
-     */
-    void rehash(size_t newSize)
-    {
-        //new key and value ptrs:
-        std::shared_ptr<ValueT>
-            newvals(new ValueT[newSize], std::default_delete<ValueT[]>());
-
-        std::shared_ptr<WrappedKeyObject<KeyT> >
-            newkeys(new WrappedKeyObject<KeyT>[newSize],
-                    std::default_delete< WrappedKeyObject<KeyT>[]>());
-
-
-        for(auto i=0; i<tableSize; ++i)
-        {
-            auto val = this->values.get()[i];
-            auto key = this->keys.get()[i];
-            //since this is ran on a single thread, acceptable for key to be
-            //non-static
-            auto hashKey = hashFunc(key.key) % newSize;
-            if(newkeys.get()[hashKey].isPopulated)
-            {
-                //error: key conflict.
-            }
-            newvals.get()[hashKey] = val;
-            newkeys.get()[hashKey] = make_wrapped_key(key.key);
-        }
-
-        this->tableSize = newSize;
+    	for(auto i=0;i<this->tableSize;++i)
+    	{
+    		auto bucket = temp_buckets[i];
+    		for(auto j=0;j<bucket.size();++j)
+    		{
+				//rehash:
+    			auto kvpair = bucket[j];
+				auto hashKey = hashFunc(kvpair.first) % newSize;
+				auto newBucket = newBuckets.get()[hashKey];
+				newBucket.upsert(kvpair);
+    		}
+    	}
+    	//replace size:
+    	this->tableSize = newSize;
+    	this->buckets = newBuckets;
+    	//release lock on old buckets:
+    	for(auto i=0;i<this->tableSize;++i)
+    	{
+    		temp_buckets.get()[i].lock.unlock();
+    	}
+    	//old buckets should be destructed automatically
     }
 };
 }//end namespace TSMap
