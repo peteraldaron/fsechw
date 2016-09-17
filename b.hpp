@@ -4,6 +4,13 @@
 #include <functional>
 #include <stdexcept>
 
+#define printList() \
+		std::cerr<<"{";\
+		for(auto i=0;i<length;++i){\
+			std::cerr<<list.get()[i].first<<":"<<list.get()[i].second<<", ";\
+		}\
+		std::cerr<<"}"<<std::endl;
+
 namespace TSMap
 {
 /**
@@ -44,7 +51,7 @@ struct pair
  * similar to std::make_pair
  */
 template <typename FirstT, typename SecondT>
-pair<FirstT, SecondT> make_pair(
+const pair<FirstT, SecondT> make_pair(
         const FirstT &first,
         const SecondT &second)
 {
@@ -62,7 +69,6 @@ template <typename KeyT, typename ValueT>
 class KVPairList
 {
 	std::mutex mutex;
-	std::unique_lock<std::mutex> lock;
 	std::shared_ptr<pair<KeyT, ValueT> > list;
 	size_t capacity;
 	size_t length;
@@ -70,7 +76,6 @@ class KVPairList
 public:
 	KVPairList() :
 		list(new pair<KeyT, ValueT>[32], std::default_delete<pair<KeyT, ValueT>[]>()),
-		lock(mutex),
 		capacity(32),
 		length(0)
 	{}
@@ -81,8 +86,7 @@ public:
 	KVPairList(const KVPairList<KeyT, ValueT> & rhs) :
 		list(rhs.list),
 		capacity(rhs.capacity),
-		length(rhs.length),
-		lock(mutex)
+		length(rhs.length)
 	{}
 
 	/**
@@ -92,15 +96,12 @@ public:
 	KVPairList & operator=(const KVPairList<KeyT, ValueT> rhs)
 	{
 		//need to wait for mutex on both lists
-		rhs.lock.lock();
-		lock.lock();
+		std::lock_guard<std::mutex> rlock(rhs.mutex);
+		std::lock_guard<std::mutex> lock(mutex);
 
 		list = rhs.list;
 		capacity = rhs.capacity;
 		length = rhs.length;
-
-		lock.unlock();
-		rhs.lock.unlock();
 
 		return *this;
 	}
@@ -108,9 +109,8 @@ public:
 	size_t size()
 	{
 		//acquire lock:
-		lock.lock();
+		std::lock_guard<std::mutex> lock(mutex);
 		auto retVal = length;
-		lock.unlock();
 		return retVal;
 	}
 
@@ -121,28 +121,28 @@ public:
 	void upsert(const pair<KeyT, ValueT> &kv)
 	{
 		//acquire lock:
-		lock.lock();
+		std::lock_guard<std::mutex> lock(mutex);
 
 		if(length >= capacity)
 		{
-			resize((size_t)capacity*1.5);
+			resize((size_t)(capacity*1.5));
 		}
 		//if key exists in list, update
-		if(auto i = indexOf(kv.first) != -1)
+		auto i = indexOf(kv.first);
+		if(i != -1)
 		{
-			std::cerr<<"index found at "<<i<<std::endl;
+			std::cerr<<"key \""<<kv.first<<"\" found at "<<i<<", whose value is \""<<list.get()[i].second<<"\""<<std::endl;
 			list.get()[i].second = kv.second;
 		}
 		else
 		{
 			this->list.get()[length++] = kv;
 		}
-		lock.unlock();
 	}
 	void erase(const KeyT &key)
 	{
 		//erase object with given key and "move" all elements after removed element
-		lock.lock();
+		std::lock_guard<std::mutex> lock(mutex);
 		//linear search
 		if(auto i = indexOf(key) != -1)
 		{
@@ -154,7 +154,6 @@ public:
 			--length;
 		}
 		//if element not found in list, it is considered to be ``removed''
-		lock.unlock();
 	}
 
 	/**
@@ -163,9 +162,8 @@ public:
 	 */
 	size_t count(const KeyT &key)
 	{
-		lock.lock();
+		std::lock_guard<std::mutex> lock(mutex);
 		auto count = indexOf(key) == -1 ? 0 : 1;
-		lock.unlock();
 		return count;
 	}
 
@@ -175,15 +173,13 @@ public:
 	 */
 	ValueT & operator[](const KeyT & key)
 	{
-		lock.lock();
+		std::lock_guard<std::mutex> lock(mutex);
 		if(auto i = indexOf(key) != -1)
 		{
 			auto retVal = list.get()[i];
-			lock.unlock();
 			return retVal;
 		}
 		//else:
-		lock.unlock();
 		//throw error:
 		throw new std::invalid_argument("invalid key given in KVList");
 	}
@@ -219,11 +215,14 @@ private:
 		if(newCapacity >= length)
 		{
 			std::shared_ptr<pair<KeyT, ValueT> >
-				newList(new pair<KeyT, ValueT>[(size_t)(newCapacity)]);
+				newList(new pair<KeyT, ValueT>[(size_t)(newCapacity)],
+						std::default_delete<pair<KeyT, ValueT>[]>());
 			//copy to newlist:
 			for(auto i=0;i<this->length;++i){
 				newList.get()[i] = list.get()[i];
 			}
+			list = newList;
+			this->capacity = newCapacity;
 		}
 		else
 		{
@@ -309,7 +308,7 @@ public:
     	//note: this operation is required before the copying takes place
     	for(auto i=0;i<this->tableSize;++i)
     	{
-    		temp_buckets.get()[i].lock.lock();
+    		std::lock_guard<std::mutex>(temp_buckets.get()[i].mutex);
     	}
     	//build new buckets with given size:
     	std::shared_ptr<utility::KVPairList<KeyT, ValueT> >
