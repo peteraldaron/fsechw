@@ -6,7 +6,7 @@ BINS=tsmap
 all: $(BINS)
 
 tsmap: TSMap.cpp TSMap.hpp KVPairList.hpp
-	$(CXX) $(CXXFLAGS) -o $@ b.cpp
+	$(CXX) $(CXXFLAGS) -o $@ TSMap.cpp
 
 clean:
 	rm -rf *.o *.a $(BINS)
