@@ -97,7 +97,8 @@ public:
         list(rhs.list),
         capacity(rhs.capacity),
         lastElementPtr(rhs.lastElementPtr),
-        validSize(rhs.validSize)
+        validSize(rhs.validSize),
+        validity(rhs.validity)
     {}
 
     /**
@@ -114,6 +115,7 @@ public:
         capacity = rhs.capacity;
         lastElementPtr = rhs.lastElementPtr;
         validSize = rhs.validSize;
+        validity = rhs.validity;
 
         return *this;
     }
