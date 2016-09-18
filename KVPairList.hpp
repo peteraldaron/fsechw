@@ -1,5 +1,7 @@
+#pragma once
 #include <iostream>
 #include <memory>
+#include <algorithm>
 #include <mutex>
 #include <functional>
 #include <stdexcept>
@@ -89,7 +91,7 @@ class KVPairList
 public:
 	KVPairList(size_t capacity) :
 		list(new pair<KeyT, ValueT>[capacity], std::default_delete<pair<KeyT, ValueT>[]>()),
-		validity(new bool[capacity](), std::default_delete<bool[]>()),
+		validity(new bool[capacity], std::default_delete<bool[]>()),
 		capacity(capacity),
 		lastElementPtr(0),
 		validSize(0)
@@ -98,11 +100,7 @@ public:
 	 * default constructor: bucket size = 32
 	 */
 	KVPairList() :
-		list(new pair<KeyT, ValueT>[32], std::default_delete<pair<KeyT, ValueT>[]>()),
-		validity(new bool[32](), std::default_delete<bool[]>()),
-		capacity(32),
-		lastElementPtr(0),
-		validSize(0)
+		KVPairList(32)
 	{}
 
 	/**
@@ -179,12 +177,12 @@ public:
 	 */
 	friend std::ostream& operator<<(std::ostream &stream, const KVPairList& rhs)
 	{
-		stream<<"{";
+		//stream<<"{";
 		for(auto i=0;i<rhs.lastElementPtr;++i){
 			if(rhs.validity.get()[i])
 			stream<<rhs.list.get()[i].first<<":"<<rhs.list.get()[i].second<<", ";
-		}\
-		stream<<"}";
+		}
+		//stream<<"}";
 		return stream;
 	}
 

@@ -1,3 +1,4 @@
+#pragma once
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -44,8 +45,12 @@ public:
     void deleteByKey(const KeyT& key)
     {
         auto hashKey = hashFunc(key) % tableSize;
-        auto bucket = buckets.get()[hashKey];
-        bucket.erase(key);
+        buckets.get()[hashKey].erase(key);
+    }
+
+    size_t count(const KeyT& key)
+    {
+    	return buckets.get()[hashFunc(key)%tableSize].count(key);
     }
 
     /**
@@ -58,15 +63,19 @@ public:
     {
         auto hashKey = hashFunc(key) % tableSize;
         //insert to corresponding bucket
-        auto bucket = buckets.get()[hashKey];
-        bucket.upsert(make_pair(key, value));
+        buckets.get()[hashKey].upsert(make_pair(key, value));
     }
 
     ValueT& lookup(const KeyT &key)
     {
         auto hashKey = hashFunc(key) % tableSize;
-        auto bucket = buckets.get()[hashKey];
-        return bucket[key];
+        return buckets.get()[hashKey][key];
+    }
+
+    ValueT& operator[](const KeyT &key)
+    {
+        auto hashKey = hashFunc(key) % tableSize;
+        return buckets.get()[hashKey][key];
     }
 
     /**
