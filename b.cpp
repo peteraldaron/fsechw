@@ -182,5 +182,138 @@ BOOST_AUTO_TEST_CASE(TSMap_multithread_test_1)
 	});
 }
 
+//multithread write with two conflicts
+BOOST_AUTO_TEST_CASE(TSMap_multithread_test_2)
+{
+    using string = std::string;
+    TSMap::TSMap<int, int> map;
+
+	//on default bucket = 128, will have two hash conflicts
+    std::thread tpool[256];
+    for(auto i=0;i<256;++i)
+    {
+    	tpool[i] = std::thread([&](const int tid){
+			map.insert(tid, tid);
+		}, i);
+	}
+
+    std::for_each(tpool, tpool+256, [&](std::thread &t)
+    {
+    	t.join();
+	});
+
+	//verify:
+    for(auto i=0;i<256;++i)
+    {
+    	BOOST_TEST(map[i]==i);
+	}
+}
+
+//multithread write with duplicates: update
+BOOST_AUTO_TEST_CASE(TSMap_multithread_test_with_duplicates)
+{
+    using string = std::string;
+    TSMap::TSMap<int, int> map;
+
+    std::thread tpool[256];
+    for(auto i=0;i<256;++i)
+    {
+    	tpool[i] = std::thread([&](const int tid){
+			map.insert(tid/2, tid);
+			map.insert(tid, tid);
+		}, i);
+	}
+
+    std::for_each(tpool, tpool+256, [&](std::thread &t)
+    {
+    	t.join();
+	});
+
+	//verify:
+    for(auto i=0;i<128;++i)
+    {
+    	bool value = map[i]==i || map[i]==i*2 || map[i]==i*2+1;
+    	BOOST_TEST(value);
+	}
+}
+
+BOOST_AUTO_TEST_CASE(TSMap_multithread_erase_1)
+{
+    using string = std::string;
+    TSMap::TSMap<int, int> map;
+
+    std::thread tpool[128];
+    for(auto i=0;i<128;++i)
+    {
+    	tpool[i] = std::thread([&](const int tid){
+			map.insert(tid, tid);
+		}, i);
+	}
+
+    std::for_each(tpool, tpool+128, [&](std::thread &t)
+    {
+    	t.join();
+	});
+
+    for(auto i=0;i<32;++i)
+    {
+    	tpool[i] = std::thread([&](const int tid){
+			map.deleteByKey(tid);
+		}, i);
+	}
+    std::for_each(tpool, tpool+32, [&](std::thread &t)
+    {
+    	t.join();
+	});
+
+	//verify:
+    for(auto i=32;i<128;++i)
+    {
+    	bool value = map[i]==i;
+    	BOOST_TEST(value);
+	}
+
+    for(auto i=0;i<32;++i)
+    {
+    	BOOST_TEST(map.count(i) == 0);
+	}
+}
+
+BOOST_AUTO_TEST_CASE(TSMap_multithread_upsert)
+{
+    using string = std::string;
+    TSMap::TSMap<int, int> map;
+
+    std::thread tpool[128];
+    for(auto i=0;i<128;++i)
+    {
+    	tpool[i] = std::thread([&](const int tid){
+			map.insert(tid, tid);
+		}, i);
+	}
+
+    std::for_each(tpool, tpool+128, [&](std::thread &t)
+    {
+    	t.join();
+	});
+
+	//increment by one:
+    for(auto i=0;i<128;++i)
+    {
+    	tpool[i] = std::thread([&](const int tid){
+			map.insert(tid, map[tid]+1);
+		}, i);
+	}
+
+    std::for_each(tpool, tpool+128, [&](std::thread &t)
+    {
+    	t.join();
+	});
+
+    for(auto i=0;i<128;++i)
+    {
+    	BOOST_TEST(map[i] == i+1);
+	}
+}
 BOOST_AUTO_TEST_SUITE_END()
 #endif
