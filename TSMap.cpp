@@ -315,5 +315,6 @@ BOOST_AUTO_TEST_CASE(TSMap_multithread_upsert)
     	BOOST_TEST(map[i] == i+1);
 	}
 }
+
 BOOST_AUTO_TEST_SUITE_END()
 #endif
