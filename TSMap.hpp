@@ -28,15 +28,15 @@ public:
      * default constructor: set bucket size to 128
      */
     TSMap() :
-    	buckets(new utility::KVPairList<KeyT, ValueT>[128](),
-    			std::default_delete<utility::KVPairList<KeyT, ValueT>[] >()),
-		tableSize(128)
-	{}
+        buckets(new utility::KVPairList<KeyT, ValueT>[128](),
+                std::default_delete<utility::KVPairList<KeyT, ValueT>[] >()),
+        tableSize(128)
+    {}
 
     TSMap(size_t tableSize) :
-    	buckets(new utility::KVPairList<KeyT, ValueT>[tableSize](),
-    			std::default_delete<utility::KVPairList<KeyT, ValueT>[] >()),
-		tableSize(tableSize)
+        buckets(new utility::KVPairList<KeyT, ValueT>[tableSize](),
+                std::default_delete<utility::KVPairList<KeyT, ValueT>[] >()),
+        tableSize(tableSize)
     {}
 
     ~TSMap()
@@ -50,7 +50,7 @@ public:
 
     size_t count(const KeyT& key)
     {
-    	return buckets.get()[hashFunc(key)%tableSize].count(key);
+        return buckets.get()[hashFunc(key)%tableSize].count(key);
     }
 
     /**
@@ -82,14 +82,14 @@ public:
      * thread safety not guaranteed
      * for debugging purpose
      */
-	friend std::ostream& operator<<(std::ostream &stream, const TSMap& rhs)
-	{
-		stream<<"{";
-		for(auto i=0;i<rhs.tableSize;++i){
-			stream<<rhs.buckets.get()[i];
-		}
-		stream<<"}";
-		return stream;
-	}
+    friend std::ostream& operator<<(std::ostream &stream, const TSMap& rhs)
+    {
+        stream<<"{";
+        for(auto i=0;i<rhs.tableSize;++i){
+            stream<<rhs.buckets.get()[i];
+        }
+        stream<<"}";
+        return stream;
+    }
 };
 }//end namespace TSMap
