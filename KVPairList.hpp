@@ -3,13 +3,23 @@
 #include <mutex>
 #include <functional>
 #include <stdexcept>
+#include <condition_variable>
 
 #define printList() \
 		std::cerr<<"{";\
-		for(auto i=0;i<length;++i){\
+		for(auto i=0;i<lastElementPtr;++i){\
 			std::cerr<<list.get()[i].first<<":"<<list.get()[i].second<<", ";\
 		}\
 		std::cerr<<"}"<<std::endl;
+
+#define printValidList() \
+		std::cerr<<"{";\
+		for(auto i=0;i<lastElementPtr;++i){\
+			if(validity.get()[i])\
+			std::cerr<<list.get()[i].first<<":"<<list.get()[i].second<<", ";\
+		}\
+		std::cerr<<"}"<<std::endl;
+
 
 namespace TSMap
 {
@@ -70,23 +80,41 @@ class KVPairList
 {
 	std::mutex mutex;
 	std::shared_ptr<pair<KeyT, ValueT> > list;
+	//mark stored value as valid/invalid. for fast erase.
+	std::shared_ptr<bool> validity;
 	size_t capacity;
-	size_t length;
+	size_t lastElementPtr;
+	size_t validSize;
 	//defaults capacity to 32
 public:
+	KVPairList(size_t capacity) :
+		list(new pair<KeyT, ValueT>[capacity], std::default_delete<pair<KeyT, ValueT>[]>()),
+		validity(new bool[capacity](), std::default_delete<bool[]>()),
+		capacity(capacity),
+		lastElementPtr(0),
+		validSize(0)
+	{}
+	/**
+	 * default constructor: bucket size = 32
+	 */
 	KVPairList() :
 		list(new pair<KeyT, ValueT>[32], std::default_delete<pair<KeyT, ValueT>[]>()),
+		validity(new bool[32](), std::default_delete<bool[]>()),
 		capacity(32),
-		length(0)
+		lastElementPtr(0),
+		validSize(0)
 	{}
 
 	/**
 	 * copy constructor for resizing
+	 *
+	 * warning: not thread safe
 	 */
 	KVPairList(const KVPairList<KeyT, ValueT> & rhs) :
 		list(rhs.list),
 		capacity(rhs.capacity),
-		length(rhs.length)
+		lastElementPtr(rhs.lastElementPtr),
+		validSize(rhs.validSize)
 	{}
 
 	/**
@@ -101,7 +129,8 @@ public:
 
 		list = rhs.list;
 		capacity = rhs.capacity;
-		length = rhs.length;
+		lastElementPtr = rhs.lastElementPtr;
+		validSize = rhs.validSize;
 
 		return *this;
 	}
@@ -110,7 +139,7 @@ public:
 	{
 		//acquire lock:
 		std::lock_guard<std::mutex> lock(mutex);
-		auto retVal = length;
+		auto retVal = validSize;
 		return retVal;
 	}
 
@@ -122,8 +151,10 @@ public:
 	{
 		//acquire lock:
 		std::lock_guard<std::mutex> lock(mutex);
+		//debug:
 
-		if(length >= capacity)
+
+		if(lastElementPtr >= capacity)
 		{
 			resize((size_t)(capacity*1.5));
 		}
@@ -131,27 +162,43 @@ public:
 		auto i = indexOf(kv.first);
 		if(i != -1)
 		{
-			std::cerr<<"key \""<<kv.first<<"\" found at "<<i<<", whose value is \""<<list.get()[i].second<<"\""<<std::endl;
 			list.get()[i].second = kv.second;
+			validity.get()[i] = true;
 		}
 		else
 		{
-			this->list.get()[length++] = kv;
+			this->list.get()[lastElementPtr] = kv;
+			this->validity.get()[lastElementPtr] = true;
+			lastElementPtr++;
+			validSize++;
 		}
 	}
+
+	/**
+	 * thread safety is not guaranteed
+	 */
+	friend std::ostream& operator<<(std::ostream &stream, const KVPairList& rhs)
+	{
+		stream<<"{";
+		for(auto i=0;i<rhs.lastElementPtr;++i){
+			if(rhs.validity.get()[i])
+			stream<<rhs.list.get()[i].first<<":"<<rhs.list.get()[i].second<<", ";
+		}\
+		stream<<"}";
+		return stream;
+	}
+
 	void erase(const KeyT &key)
 	{
-		//erase object with given key and "move" all elements after removed element
+		//erase object with given key by marking validity as invalid
 		std::lock_guard<std::mutex> lock(mutex);
 		//linear search
-		if(auto i = indexOf(key) != -1)
+		auto i = indexOf(key);
+		if(i != -1)
 		{
-			for(auto j=i;j<length-1;++j)
-			{
-				std::cerr<<"index found at "<<i<<std::endl;
-				list.get()[j] = list.get()[j+1];
-			}
-			--length;
+			validity.get()[i] = false;
+
+			--validSize;
 		}
 		//if element not found in list, it is considered to be ``removed''
 	}
@@ -174,10 +221,10 @@ public:
 	ValueT & operator[](const KeyT & key)
 	{
 		std::lock_guard<std::mutex> lock(mutex);
-		if(auto i = indexOf(key) != -1)
+		auto i = indexOf(key);
+		if(i != -1)
 		{
-			auto retVal = list.get()[i];
-			return retVal;
+			return list.get()[i].second;
 		}
 		//else:
 		//throw error:
@@ -197,9 +244,9 @@ private:
 	size_t indexOf(const KeyT &key)
 	{
 		auto index = -1;
-		for(auto i=0;i<length;++i)
+		for(auto i=0;i<lastElementPtr;++i)
 		{
-			if(list.get()[i].first == key)
+			if(list.get()[i].first == key && validity.get()[i])
 			{
 				index = i;
 				break;
@@ -212,16 +259,26 @@ private:
 		//do nothing
 		if(newCapacity == capacity) return;
 
-		if(newCapacity >= length)
+		if(newCapacity >= lastElementPtr)
 		{
 			std::shared_ptr<pair<KeyT, ValueT> >
 				newList(new pair<KeyT, ValueT>[(size_t)(newCapacity)],
 						std::default_delete<pair<KeyT, ValueT>[]>());
-			//copy to newlist:
-			for(auto i=0;i<this->length;++i){
-				newList.get()[i] = list.get()[i];
+			std::shared_ptr<bool>
+				newValidity(new bool[(size_t)newCapacity](),
+							std::default_delete<bool[]>());
+			//copy to newlist only the valid entries:
+			auto newListPtr = 0;
+			for(auto i=0;i<this->lastElementPtr;++i){
+				if (validity.get()[i]){
+					newList.get()[newListPtr] = list.get()[i];
+					newValidity.get()[newListPtr] = true;
+					newListPtr++;
+				}
 			}
 			list = newList;
+			validity = newValidity;
+			lastElementPtr = newListPtr;
 			this->capacity = newCapacity;
 		}
 		else
@@ -235,107 +292,4 @@ private:
 
 }//end utility namespace
 
-
-/**
- * a thread safe hashmap
- *
- */
-
-template <typename KeyT, typename ValueT>
-class TSMap
-{
-private:
-    std::shared_ptr<utility::KVPairList<KeyT, ValueT> > buckets;
-    size_t tableSize;
-    std::hash<KeyT> hashFunc;
-
-public:
-    /**
-     * default constructor: set bucket size to 128
-     */
-    TSMap() :
-    	buckets(new utility::KVPairList<KeyT, ValueT>[128],
-    			std::default_delete<utility::KVPairList<KeyT, ValueT>[] >()),
-		tableSize(128)
-	{}
-
-    TSMap(size_t tableSize) :
-    	buckets(new utility::KVPairList<KeyT, ValueT>[tableSize],
-    			std::default_delete<utility::KVPairList<KeyT, ValueT>[] >()),
-		tableSize(tableSize)
-    {}
-
-    ~TSMap()
-    {}
-
-    void deleteByKey(const KeyT& key)
-    {
-        auto hashKey = hashFunc(key) % tableSize;
-        auto bucket = buckets.get()[hashKey];
-        bucket.erase(key);
-    }
-
-    /**
-     * insert an entry by key to map
-     *
-     * key and value pairs should have a default/overloaded copying operator=
-     * and/or a copying constructor
-     */
-    void insert(const KeyT &key, const ValueT &value)
-    {
-        auto hashKey = hashFunc(key) % tableSize;
-        //insert to corresponding bucket
-        auto bucket = buckets.get()[hashKey];
-        bucket.upsert(make_pair(key, value));
-    }
-
-    ValueT& lookup(const KeyT &key)
-    {
-        auto hashKey = hashFunc(key) % tableSize;
-        auto bucket = buckets.get()[hashKey];
-        return bucket[key];
-    }
-
-    /**
-     * resizing the number of hashmap buckets to the given size
-     *
-     * this is a blocking call
-     */
-    void resize(size_t newSize)
-    {
-    	auto temp_buckets = buckets;
-    	//need to acquire locks on ALL buckets
-    	//note: this operation is required before the copying takes place
-    	for(auto i=0;i<this->tableSize;++i)
-    	{
-    		std::lock_guard<std::mutex>(temp_buckets.get()[i].mutex);
-    	}
-    	//build new buckets with given size:
-    	std::shared_ptr<utility::KVPairList<KeyT, ValueT> >
-			newBuckets(new utility::KVPairList<KeyT, ValueT>[newSize],
-					std::default_delete<utility::KVPairList<KeyT, ValueT> >());
-
-    	for(auto i=0;i<this->tableSize;++i)
-    	{
-    		auto bucket = temp_buckets[i];
-    		for(auto j=0;j<bucket.size();++j)
-    		{
-				//rehash:
-    			auto kvpair = bucket[j];
-				auto hashKey = hashFunc(kvpair.first) % newSize;
-				auto newBucket = newBuckets.get()[hashKey];
-				newBucket.upsert(kvpair);
-    		}
-    	}
-    	//replace size:
-    	this->tableSize = newSize;
-    	this->buckets = newBuckets;
-    	//release lock on old buckets:
-    	for(auto i=0;i<this->tableSize;++i)
-    	{
-    		temp_buckets.get()[i].lock.unlock();
-    	}
-    	//old buckets should be destructed automatically
-    }
-};
-}//end namespace TSMap
+}//end tsmap ns
