@@ -21,6 +21,7 @@ BOOST_AUTO_TEST_CASE(test_single_thread_kvlist_no_resize)
     {
         pl.upsert(::TSMap::make_pair(std::to_string(i), (int)i));
     }
+    BOOST_TEST(pl.size() == 'Z'-'A'+1);
 }
 
 BOOST_AUTO_TEST_CASE(test_single_thread_kvlist_with_resize)
@@ -32,6 +33,8 @@ BOOST_AUTO_TEST_CASE(test_single_thread_kvlist_with_resize)
     {
         pl.upsert(::TSMap::make_pair(std::to_string(i), (int)i));
     }
+
+    BOOST_TEST(pl.size() == 'z'-'A'+1);
 }
 
 BOOST_AUTO_TEST_CASE(test_multiple_threads_kvlist_with_resize)
@@ -40,6 +43,7 @@ BOOST_AUTO_TEST_CASE(test_multiple_threads_kvlist_with_resize)
     using string = std::string;
     utility::KVPairList<string, int> pl;
 
+    //start 3 threads
     std::thread tr[3];
     for(int j=0;j<3;++j)
     {
@@ -56,6 +60,8 @@ BOOST_AUTO_TEST_CASE(test_multiple_threads_kvlist_with_resize)
     {
         tr[j].join();
     }
+
+    BOOST_TEST(pl.size() == ('z'-'A'+1)*3);
 }
 
 BOOST_AUTO_TEST_CASE(test_multiple_threads_kvlist_erase)
@@ -83,11 +89,12 @@ BOOST_AUTO_TEST_CASE(test_multiple_threads_kvlist_erase)
         tr[j].join();
     }
 
+    BOOST_TEST(pl.size() == ('z'-'A'+1)*3);
+
     for(int j=0;j<3;++j)
     {
         tr2[j] = std::thread([&](const int val)
         {
-            auto id = std::this_thread::get_id();
             for(auto i='A';i<='z';++i)
             {
                 pl.erase(std::to_string((char)i)+std::to_string(val));
@@ -99,6 +106,8 @@ BOOST_AUTO_TEST_CASE(test_multiple_threads_kvlist_erase)
     {
         tr2[j].join();
     }
+
+    BOOST_TEST(pl.size() == 0);
 }
 
 BOOST_AUTO_TEST_CASE(test_multiple_threads_kvlist_erase_with_resize_validity)
@@ -113,6 +122,8 @@ BOOST_AUTO_TEST_CASE(test_multiple_threads_kvlist_erase_with_resize_validity)
     pl.upsert(::TSMap::make_pair(string("four"), 4));
     pl.upsert(::TSMap::make_pair(string("five"), 5));
 
+    BOOST_TEST(pl.size()==5);
+
     std::thread t1([&](){pl.erase("one");});
     std::thread t2([&](){pl.erase("three");});
     std::thread t3([&](){pl.erase("five");});
@@ -121,11 +132,13 @@ BOOST_AUTO_TEST_CASE(test_multiple_threads_kvlist_erase_with_resize_validity)
     t2.join();
     t3.join();
 
+    BOOST_TEST(pl.size()==2);
+
     BOOST_TEST(pl["two"] == 2);
     BOOST_TEST(pl["four"] == 4);
 }
 
-BOOST_AUTO_TEST_CASE(TSMap_insert_test)
+BOOST_AUTO_TEST_CASE(TSMap_insert_test_single_thread)
 {
     using string = std::string;
     TSMap::TSMap<string, int> map;
@@ -141,7 +154,7 @@ BOOST_AUTO_TEST_CASE(TSMap_insert_test)
     BOOST_TEST(map["five"] == 7);
 }
 
-BOOST_AUTO_TEST_CASE(TSMap_erase_test)
+BOOST_AUTO_TEST_CASE(TSMap_erase_test_single_thread)
 {
     using string = std::string;
     TSMap::TSMap<string, int> map;
@@ -156,6 +169,7 @@ BOOST_AUTO_TEST_CASE(TSMap_erase_test)
 
     map.deleteByKey("five");
     map.deleteByKey("two");
+
     BOOST_TEST(map.count("five") == 0);
     BOOST_TEST(map.count("two") == 0);
 }
@@ -180,6 +194,9 @@ BOOST_AUTO_TEST_CASE(TSMap_multithread_test_1)
     {
         t.join();
     });
+
+    //test edge value to be sure. others may be overwritten
+    BOOST_TEST(map[31*3-1]==31);
 }
 
 //multithread write with two conflicts
@@ -237,7 +254,7 @@ BOOST_AUTO_TEST_CASE(TSMap_multithread_test_with_duplicates)
     }
 }
 
-BOOST_AUTO_TEST_CASE(TSMap_multithread_erase_1)
+BOOST_AUTO_TEST_CASE(TSMap_multithread_erase)
 {
     using string = std::string;
     TSMap::TSMap<int, int> map;
