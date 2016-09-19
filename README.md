@@ -23,7 +23,9 @@ that.
 The main function tests values for f(n) where n=0..19, 123456789012345678
 (example) and UINT64_MAX. The algorithm uses dynamic programming, where the
 factors are first decomposed top-bottom, then the values of the factors are
-reconstructed bottom-up, which yields the final value of the function. For more
+reconstructed bottom-up, which yields the final value of the function. The
+actual runtime of the whole main function is less than 0.01s with -O3 flag on
+gcc 6 according to $time, which puts the runtime in the ms range. For more
 details, please see comments in file.
 
 
