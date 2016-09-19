@@ -55,6 +55,23 @@ inline T getEvenFactor(const T &num)
 std::unordered_map<uint64_t, uint64_t> table;
 
 
+
+/**
+ * calculates f(n) defined by the following recursion relationship:
+ *
+ * f(0) = 1
+ * f(1) = 1
+ * f(2n) = f(n)
+ * f(2n+1) = f(n) + f(n-1)
+ *
+ * param: n
+ * returns: f(n)
+ *
+ * please use a valid number in the uint64_t range. note that with the given
+ * relationship f(n) will always be smaller than n. there will be a wrap around
+ * if integer overflow were to occur, and will still give a valid value
+ * (UINT64_MAX+1 = 0)
+ */
 uint64_t calculateRecursionValue(uint64_t num)
 {
     //shortcuts:
@@ -138,11 +155,14 @@ int main()
     table[0] = 1;
     table[1] = 1;
 
+    //calculate f(n) for n=0..19
     for(auto x = 0; x<20; ++x)
     {
         std::cout<<calculateRecursionValue(x)<<std::endl;
     }
 
     std::cout<<calculateRecursionValue(123456789012345678)<<std::endl;
+    //test for max value
+    std::cout<<calculateRecursionValue(UINT64_MAX)<<std::endl;
     return 0;
 }
