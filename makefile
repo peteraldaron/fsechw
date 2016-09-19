@@ -1,5 +1,5 @@
-CXX=c++
-CXXFLAGS=-I. -std=c++14 -g -ggdb -lboost_system -pthread
+CXX=c++ -O3
+CXXFLAGS=-I. -std=c++14 -lboost_system -pthread
 
 BINS=tsmap recursion
 
