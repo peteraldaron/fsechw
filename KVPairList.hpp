@@ -5,7 +5,6 @@
 #include <mutex>
 #include <functional>
 #include <stdexcept>
-#include <condition_variable>
 
 
 namespace TSMap
@@ -61,16 +60,26 @@ namespace utility
 /**
  * a "bucket" in map for hash function level collision
  * needs to be thread-safe at this level.
+ *
+ * underlying datastructure: two dynamically allocated arrays, one for key-value
+ * pair and the other for key-value pair validity (for quick deletion)
+ *
+ * the invalid elements are removed at resizing
  */
 template <typename KeyT, typename ValueT>
 class KVPairList
 {
+    //bucket-specific lock
     std::mutex mutex;
+    //key-value pair array
     std::shared_ptr<pair<KeyT, ValueT> > list;
     //mark stored value as valid/invalid. for fast erase.
     std::shared_ptr<bool> validity;
+    //allocated bucket size
     size_t capacity;
+    //pointer at last element written to array
     size_t lastElementPtr;
+    //number of ``actual'' or valid entries
     size_t validSize;
     //defaults capacity to 32
 public:
@@ -81,6 +90,7 @@ public:
         lastElementPtr(0),
         validSize(0)
     {}
+
     /**
      * default constructor: bucket size = 32
      */
@@ -89,37 +99,28 @@ public:
     {}
 
     /**
-     * copy constructor for resizing
-     *
-     * warning: not thread safe
-     */
-    KVPairList(const KVPairList<KeyT, ValueT> & rhs) :
-        list(rhs.list),
-        capacity(rhs.capacity),
-        lastElementPtr(rhs.lastElementPtr),
-        validSize(rhs.validSize),
-        validity(rhs.validity)
-    {}
-
-    /**
-     * operator= for assignment
+     * operator= for assignment from right hand side (rhs)
      *
      */
     KVPairList & operator=(const KVPairList<KeyT, ValueT> rhs)
     {
-        //need to wait for mutex on both lists
+        //need to guard both lists for mutex access
         std::lock_guard<std::mutex> rlock(rhs.mutex);
         std::lock_guard<std::mutex> lock(mutex);
 
         list = rhs.list;
+        validity = rhs.validity;
         capacity = rhs.capacity;
         lastElementPtr = rhs.lastElementPtr;
         validSize = rhs.validSize;
-        validity = rhs.validity;
 
         return *this;
     }
 
+    /**
+     * size()
+     * returns ``valid size'', or number of elements in list that's valid
+     */
     size_t size()
     {
         //acquire lock:
@@ -131,14 +132,15 @@ public:
     /**
      * insert key-value pair if key didnt exist in list
      * otherwise update preexisting key's value
+     *
+     * param: const pair of key-value
      */
     void upsert(const pair<KeyT, ValueT> &kv)
     {
         //acquire lock:
         std::lock_guard<std::mutex> lock(mutex);
-        //debug:
 
-
+        //if array full, increase array size by 50%
         if(lastElementPtr >= capacity)
         {
             resize((size_t)(capacity*1.5));
@@ -152,6 +154,7 @@ public:
         }
         else
         {
+            //insert new
             this->list.get()[lastElementPtr] = kv;
             this->validity.get()[lastElementPtr] = true;
             lastElementPtr++;
@@ -160,7 +163,13 @@ public:
     }
 
     /**
+     *
+     * outputs a string that represents the array of key-value pairs
+     *
      * thread safety is not guaranteed
+     *
+     * for debugging purposes mostly.
+     *
      */
     friend std::ostream& operator<<(std::ostream &stream, const KVPairList& rhs)
     {
@@ -173,6 +182,14 @@ public:
         return stream;
     }
 
+    /**
+     * removes an element by key
+     *
+     * only marking the element to be removed as invalid for fast operation
+     *
+     * if element not found in list, it is considered to be ``removed''
+     * param: key of object to be removed
+     */
     void erase(const KeyT &key)
     {
         //erase object with given key by marking validity as invalid
@@ -191,6 +208,8 @@ public:
     /**
      * return 1 if key exists in list
      * 0 otherwise
+     *
+     * param: key of element
      */
     size_t count(const KeyT &key)
     {
@@ -202,6 +221,8 @@ public:
 
     /**
      * get object with given key
+     *
+     * param: key of element
      */
     ValueT & operator[](const KeyT & key)
     {
@@ -213,9 +234,11 @@ public:
         }
         //else:
         //throw error:
+        //this is why one should check for validity first using .count()
         throw new std::invalid_argument("invalid key given in KVList");
     }
 
+    //allows access from TSMap class
     friend class TSMap;
 
 private:
@@ -223,7 +246,9 @@ private:
      * return index of key-value pair if key exists in list
      * -1 otherwise
      *
-     * not thread safe
+     * not thread safe, should always be called by own class methods
+     *
+     * param: key of element
      */
 
     size_t indexOf(const KeyT &key)
@@ -239,6 +264,13 @@ private:
         }
         return index;
     }
+
+    /**
+     * resizes both validity list and key-value pair list to new size according
+     * to parameter, copies element over.
+     *
+     * param: new capacity to be resized
+     */
     void resize(size_t newCapacity)
     {
         //do nothing
