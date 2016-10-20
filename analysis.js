@@ -1,5 +1,5 @@
 /**
- * F-Secure "homework"
+ * data analysis pipeline
  *
  * Peter Zhang
  * August 4, 2016
